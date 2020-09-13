@@ -248,18 +248,19 @@ def makeTables(cursor):
     cursor.execute("Create Table If Not Exists graphs (graphid Integer Primary Key, iteration Integer, atomid Text Unique, jit_graph Text, cansmiles Text)")
     #cursor.execute("Create Table If Not Exists smarts (atomid text Unique, smarts Text, symbol Text, in_ring integer, is_aromatic integer, hvy_degree integer, hvy_valence integer, hcount integer, formal_charge integer, atomic_number integer, mass integer)")
     #cursor.execute("Create Table If Not Exists parents (atomid text Unique, parentid text, iteration integer)")
-    cursor.execute("Create View If Not Exists atom_types As Select atomid, Min(iteration) iteration, Count(distinct molid) frequency From atoms Group By atomid")
+    cursor.execute("Create View If Not Exists atom_types As Select atomid, cansmiles, Min(iteration) iteration, Count(distinct molid) frequency From atoms Group By atomid")
 
 def parse_args():
     import argparse
-    parser = argparse.ArgumentParser(description="create fragments of input molecule(s)")
+    parser = argparse.ArgumentParser(description="create fragments of input molecule(s)",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-v", "--verbosity", type=int, help="increase output verbosity", default=0)
-    parser.add_argument("-sdf", help="input sd file")
+    parser.add_argument("sdf", help="input sd file")
+    parser.add_argument("-db", help="output sqlite3 file", default=":memory:")
+    parser.add_argument("-d", "--depth", type=int, help="maximum depth to search", default=1)
     parser.add_argument("-k", "--keepH", help="keep explicit H atoms in sd file", action="store_true")
     parser.add_argument("-l", "--limit", type=int, help="limit number of input molecules processed")
     parser.add_argument("-t", "--test", help="one smiles string as a test; no db output")
-    parser.add_argument("-db", help="output sqlite3 file", default=":memory:")
-    parser.add_argument("-d", "--depth", type=int, help="maximum depth to search", default=1)
     parser.add_argument("-p", "--properties", help="include smarts properties on some atoms; root, tail, root+tail, all, none", default="all")
     parser.add_argument("-g", "--graphs", help="test and store networkx graphs", action="store_true")
     return parser
@@ -353,6 +354,6 @@ def main():
         parser.print_help()
 
 if __name__ == "__main__":
-    import cProfile
-    cProfile.run('main()', 'profile.out')
-    #main()
+    #import cProfile
+    #cProfile.run('main()', 'profile.out')
+    main()
