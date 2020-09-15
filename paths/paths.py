@@ -29,6 +29,7 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 import json
 import sqlite3
+import sys
 from graphs import mol_to_graph, compare, fragment_bfs
 import networkx as nx
 
@@ -288,8 +289,11 @@ def parse_args():
 
 def main():
     parser = parse_args()
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit()
     parsed = parser.parse_args()
-
+    
     # input sdf
     sdfile = parsed.sdf
     # remove H

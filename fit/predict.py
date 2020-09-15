@@ -22,6 +22,8 @@
 import sys
 import sqlite3
 import pickle
+from sklearn.metrics import r2_score
+import matplotlib.pyplot as plt
 
 #from rdkit import Chem
 #from rdkit.Chem import rdMolDescriptors
@@ -53,94 +55,81 @@ def addView(cur, add):
 		select_clause = ",".join(select)
 		cur.execute(sql % (case_clause, select_clause))
 	return property_names
-	
-def db_predict(cur, property_name, format, add, compare):
-	if add: property_names = addView(cur, add[0])
-	result = []
+
+def predict(cur, property_name, pickle_file):
+	predicted_values = []
 	cur.execute("Create Temporary View If Not Exists counts As Select molid, atomid, Count(atom_index) pcount From atoms Group By molid, atomid")
+	if pickle_file:
+		model = pickle.load(open(pickle_file, 'rb'))
+		cur.execute("Select count(molid) From molecule")
+		nmols = cur.fetchone()[0]
+		cur.execute("Select count(atomid) From atomid_coefficients Where atomid != 'Intercept'")
+		natomid = cur.fetchone()[0]
+		#sql = "Select molid, Coalesce(pcount,0) pcount From molecule Left Join counts Using (molid) Join atomid_coefficients Using (atomid) Order By molid, atomid"
+		sql = """With matrix As (Select atomid, molid From atomid_coefficients Join molecule Where atomid != 'Intercept')
+		 Select Coalesce(pcount,0) pcount From matrix Left Join counts Using (molid,atomid) Order By molid, atomid"""
+		cur.execute(sql)
+		counts = []
+		for i in range(0, nmols):
+			counts.append([row[0] for row in cur.fetchmany(natomid)])
+		#print (len(counts), len(counts[0]))
+		#print (counts)
+		predicted_values = model.predict(counts)
+		cur.execute("Create Temporary Table new_property (molid Integer, propvlaue Numeric)")
+		for imol in range(0, len(predicted_values)):
+			cur.execute("Insert Into new_property (molid, propvlaue) Values (?,?)", (imol+1, predicted_values[imol]))
+	else:
+		sql = """Create Temporary View new_property As With
+				atmp As (Select coefficient As intercept From atomid_coefficients Where atomid='Intercept'),
+				result As (Select molid, atomid, pcount, coefficient
+				  From molecule Join counts Using (molid) Join atomid_coefficients Using (atomid))
+				Select molid, Sum(pcount*coefficient)+intercept propvlaue
+				  From atmp Join result Group By molid Order By molid"""
+		cur.execute(sql)
+		cur.execute("Select propvlaue From new_property Order By molid")
+		predicted_values = cur.fetchall() # list(cur.fetchall())
+	return predicted_values
+
+def output_file(cur, property_name, fpout, format, add):
+	# output requested property values
+	if add: property_names = addView(cur, add[0])
+	cur.execute("Select * from new_property Order By molid")
 	if format == "sdf":
-		sql = """With atmp As (Select coefficient As intercept From atomid_coefficients Where atomid='Intercept'),
-		 properties As (select molid, Group_concat(printf('> <%s>%s%s%s', propname, char(10), propvalue, char(10)), char(10) ) pvals
-		   From property_values Join property_names Using (propid) Group By molid),
-		 result As (Select molid, molblock, atomid, pcount, coefficient
-		   From molecule Join counts Using (molid) Join atomid_coefficients Using (atomid))
-		 Select printf('%s%s%s> <%s>%s%.2f%s%s$$$$',
-		   molblock,pvals,char(10),?,char(10),Sum(pcount*coefficient)+intercept,char(10),char(10))
-		   From atmp Join result Join properties Using (molid) Group By molid,pvals Order By molid"""
-		cur.execute(sql, [property_name])
+		if add:
+			sql = "Select molblock, mol_properties.*, new_property.* From molecule Join mol_properties Using (molid) Join new_property Using (molid)"
+		else:
+			sql = "Select molblock, new_property.* From molecule Join new_property Using (molid)"
+		cur.execute(sql)
+		header = [property_name if d[0] == "propvlaue" else d[0] for d in cur.description]
 		for row in cur:
-			print (row[0])
+			for icol in range(0, len(row)):
+				p = row[icol]
+				pname = header[icol]
+				if pname == "molid":
+					pass
+				elif pname == "molblock":
+					print (p, file=fpout)
+				else:
+					fmt = "> <%s>\n"
+					fmt += "%d" if type(p) is int else "%.2f" if type(p) is float else "%s"
+					fmt += "\n"
+					print (fmt % (pname, p), file=fpout)
+			print ("$$$$", file=fpout)
 	elif format == "tsv" or format == "csv":
 		sep = "\t" if format == "tsv" else ","
 		if add:
-			sql = """With atmp As (Select coefficient As intercept From atomid_coefficients Where atomid='Intercept'),
-				property As (Select * From mol_properties),
-				result As (Select molid, atomid, pcount, coefficient
-				  From molecule Join counts Using (molid) Join atomid_coefficients Using (atomid))
-				Select molid, printf('%.2f', Sum(pcount*coefficient)+intercept) pval, property.*
-				  From atmp Join result Left Join property Using (molid) Group By molid Order By molid"""
-			cur.execute(sql)
-			header = ["molid", property_name]
-			for d in cur.description[3:]:
-				header.append(d[0])
-			print (sep.join(header))
-			for row in cur:
-				prow = [str(p) for p in row]
-				del prow[2] # dupliate molid from mol_properties.*
-				print (sep.join(prow))
+			sql = "Select * from mol_properties Join new_property Using (molid) Order By molid"
 		else:
-			sql = """With atmp As (Select coefficient As intercept From atomid_coefficients Where atomid='Intercept'),
-				result As (Select molid, atomid, pcount, coefficient
-				  From molecule Join counts Using (molid) Join atomid_coefficients Using (atomid))
-				Select molid, printf('%.2f', Sum(pcount*coefficient)+intercept) pval
-				  From atmp Join result Group By molid Order By molid"""
-			cur.execute(sql)
-			print (sep.join(["molid",property_name]))
-			for row in cur:
-				prow = [str(p) for p in row]
-				print (sep.join(prow))
-			
-def pickle_predict(cur, pickle_file, property_name, format, add, compare):
-	model = pickle.load(open(pickle_file, 'rb'))
-# 	intercept = model.intercept_
-# 	coefficients = model.coef_
-# 	print (intercept, len(coefficients))
-	cur.execute("Create Temporary View If Not Exists counts As Select molid, atomid, Count(atom_index) pcount From atoms Group By molid, atomid")
-	cur.execute("Select count(molid) From molecule")
-	nmols = cur.fetchone()[0]
-	cur.execute("Select count(atomid) From atomid_coefficients Where atomid != 'Intercept'")
-	natomid = cur.fetchone()[0]
-	#sql = "Select molid, Coalesce(pcount,0) pcount From molecule Left Join counts Using (molid) Join atomid_coefficients Using (atomid) Order By molid, atomid"
-	sql = """With matrix As (Select atomid, molid From atomid_coefficients Join molecule Where atomid != 'Intercept')
-	 Select Coalesce(pcount,0) pcount From matrix Left Join counts Using (molid,atomid) Order By molid, atomid"""
-	cur.execute(sql)
-	counts = []
-	for i in range(0, nmols):
-		counts.append([row[0] for row in cur.fetchmany(natomid)])
-	#print (len(counts), len(counts[0]))
-	#print (counts)
-	property_pred = model.predict(counts)
-	if format == "sdf":
-		sql = """With properties As (Select molid,
-		   Group_concat( printf('> <%s>%s%s%s', propname, char(10), propvalue, char(10)), char(10) ) pvals
-		   From property_values Join property_names Using (propid) Group By molid)
-		 Select molid, molblock, pvals From molecule Join properties Using (molid) Order By molid"""
-		cur.execute(sql)
+			sql = "Select * From new_property Order By molid"
+		cur.execute(sql)	
+		header = [property_name if d[0] == "propvlaue" else d[0] for d in cur.description]
+		print (sep.join(header), file=fpout)
 		for row in cur:
-			imol = int(row[0]) - 1
-			print ("%s%s\n> <%s>\n%.2f\n\n$$$$" % (row[1], row[2], property_name, property_pred[imol]))
-	elif format == "tsv" or format == "csv":
-		sep = "\t" if format == "tsv" else ","
-		print (sep.join(["molid", property_name]))
-		i = 0
-		for p in property_pred:
-			i += 1
-			print ("%d%s%.2f" % (i,sep,p))
-	
-def getMolMolblock(cur):
-	cur.execute("Select molblock from main.molecule")
-	mol = cur.fetchone()[0]
-	return mol
+			prow = []
+			for p in row:
+				fmt = "%d" if type(p) is int else "%.2f" if type(p) is float else "%s"
+				prow.append(fmt % p)
+			print (sep.join(prow), file=fpout)
 
 def list_properties(cur):
 	property_names = []
@@ -149,6 +138,13 @@ def list_properties(cur):
 		property_names.append (row[0])
 	return property_names
 
+def get_property_values(cur, compared_property_name):
+	cur.execute("""Select molid, propvalue From property_values Join property_names Using (propid)
+	 Where propname = ? Order By molid""", [compared_property_name])
+	property_values = [float(row[1]) for row in cur]
+	return property_values
+	return 
+
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description="Create a model that fits molecular properties to atomid counts",
@@ -156,17 +152,13 @@ def parse_args():
     parser.add_argument("database", help="input sqlite3 (db3) file from sdf2sql.py")
     parser.add_argument("property", help="name (sdf tag) of predicted property to output")
     parser.add_argument("model", help="input model sqlite3 (db3) file")
-#     parser.add_argument("ndescriptors", type=int, help="number of atomid descriptors to consider")
-#     parser.add_argument("level", type=int, help="maximum atomid level to consider")
-    parser.add_argument("-p", "--pickle", help="input python pickle of model", default=None)
-    parser.add_argument("-l", "--list", help="list properties in input db3 file, and exit", action="store_true")
+    parser.add_argument("out", help="output file name")
     parser.add_argument("-f", "--format", help="output format", choices=["sdf", "csv", "tsv"], default="tsv")
+    parser.add_argument("-p", "--pickle", help="input python pickle of model", default=None)
     parser.add_argument("-a", "--add", help="output values in these sd tags; --add alone adds all", action="append", nargs="*")
     parser.add_argument("-c", "--compare", help="compare to values in this sd tag", default=None)
-#     parser.add_argument("-c", "--correlated", help="keep or remove correlated atomid before fitting", choices=["remove", "keep"], default="remove")
-#     parser.add_argument("-n", "--modulo_N", help="include only every nth molecule; useful for shorter tests", type=int, default=1)
-#     parser.add_argument("-p", "--plot", help="output file for plot of input vs predicted values", default=None)
-#     parser.add_argument("-v", "--verbosity", type=int, help="increase output verbosity", default=1)
+    parser.add_argument("-g", "--graph", help="output comparison graph/plot to file; requires --compare", default=None)
+    parser.add_argument("-l", "--list", help="list properties in input db3 file, and exit", action="store_true")
     return parser
    
 def main():
@@ -181,20 +173,34 @@ def main():
 	pickle_file = parsed.pickle
 	property_name = parsed.property
 	format = parsed.format
-	compare = parsed.compare
+	compare_tag = parsed.compare
 	add = parsed.add
 	list = parsed.list
+	plotfile = parsed.graph
+	if plotfile and not compare_tag:
+		parser.print_help()
+		parser.error("--graph requires --compare")
+		sys.exit()
+	fpout = open(parsed.out, "w")
 	con = sqlite3.connect(mol_db)
 	cur = con.cursor()
 	if list:
 		[print(p) for p in list_properties(cur)]
 		sys.exit()
 	cur.execute('Attach ? As model',  [model_db])
-	if pickle_file:
-		pickle_predict(cur, pickle_file, property_name, format, add, compare)
-	else:
-		db_predict(cur, property_name, format, add, compare)
-
+	predicted_values = predict(cur, property_name, pickle_file)
+	output_file(cur, property_name, fpout, format, add)
+	if compare_tag:
+		property_values = get_property_values(cur, compare_tag)
+		print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, predicted_values)))
+		if plotfile:
+			fig, ax = plt.subplots()
+			ax.scatter(property_values, predicted_values, marker='.', s=16)
+			plt.title("%s / %s" % (mol_db, model_db))
+			plt.xlabel(compare_tag)
+			plt.ylabel(property_name)
+			fig.savefig(plotfile)		
+	
 if __name__ == "__main__":
     #import cProfile
     #cProfile.run('main()', 'profile.out')

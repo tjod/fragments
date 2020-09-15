@@ -110,7 +110,7 @@ def getCounts(cur, nmols, max_level, flimit):
     counts = []
     for i in range(0, nmols):
         counts.append([row[0] for row in cur.fetchmany(natomid)])
-    print (len(counts), len(counts[0]))
+    #print (len(counts), len(counts[0]))
     #print (counts)
     return (atomid, counts)
 
@@ -274,7 +274,7 @@ def main():
     if pickle_file:
         pickle.dump(model, open(pickle_file, 'wb'))
         
-    print (len(counts), len(counts[0]))
+    #print (len(counts), len(counts[0]))
     property_pred = model.predict(counts)
     r2 = r2_score(property_values, property_pred)
     if verbosity > 0: print ("Score: %.3f; R-squared: %.3f; Intercept: %.3f; %d features; %d singular" % (score, r2, intercept, len(coefficients), nsingular))
