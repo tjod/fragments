@@ -24,6 +24,7 @@ import sqlite3
 import pickle
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
+import math
 
 #from rdkit import Chem
 #from rdkit.Chem import rdMolDescriptors
@@ -138,12 +139,20 @@ def list_properties(cur):
 		property_names.append (row[0])
 	return property_names
 
-def get_property_values(cur, compared_property_name):
-	cur.execute("""Select molid, propvalue From property_values Join property_names Using (propid)
-	 Where propname = ? Order By molid""", [compared_property_name])
-	property_values = [float(row[1]) for row in cur]
+def get_property_values(cur, compared_property_name, predicted_values):
+	cur.execute("Drop View If Exists mol_properties")
+	addView(cur, [compared_property_name])
+	cur.execute("Select * From mol_properties Order By molid")
+	property_values = []
+	for row in cur:
+		imol = int(row[0]) - 1
+		try:
+			val = float(row[1])
+		except:
+			# fill in missing values with predicted value just to make r2_score and plot happy
+			val = predicted_values[imol][0]
+		property_values.append(val)
 	return property_values
-	return 
 
 def parse_args():
     import argparse
@@ -157,7 +166,7 @@ def parse_args():
     parser.add_argument("-p", "--pickle", help="input python pickle of model", default=None)
     parser.add_argument("-a", "--add", help="output values in these sd tags; --add alone adds all", action="append", nargs="*")
     parser.add_argument("-c", "--compare", help="compare to values in this sd tag", default=None)
-    parser.add_argument("-g", "--graph", help="output comparison graph/plot to file; requires --compare", default=None)
+    parser.add_argument("--plot", help="output comparison graph/plot to file; requires --compare", default=None)
     parser.add_argument("-l", "--list", help="list properties in input db3 file, and exit", action="store_true")
     return parser
    
@@ -176,7 +185,7 @@ def main():
 	compare_tag = parsed.compare
 	add = parsed.add
 	list = parsed.list
-	plotfile = parsed.graph
+	plotfile = parsed.plot
 	if plotfile and not compare_tag:
 		parser.print_help()
 		parser.error("--graph requires --compare")
@@ -191,15 +200,18 @@ def main():
 	predicted_values = predict(cur, property_name, pickle_file)
 	output_file(cur, property_name, fpout, format, add)
 	if compare_tag:
-		property_values = get_property_values(cur, compare_tag)
-		print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, predicted_values)))
-		if plotfile:
-			fig, ax = plt.subplots()
-			ax.scatter(property_values, predicted_values, marker='.', s=16)
-			plt.title("%s / %s" % (mol_db, model_db))
-			plt.xlabel(compare_tag)
-			plt.ylabel(property_name)
-			fig.savefig(plotfile)		
+		if compare_tag in list_properties(cur):
+			property_values = get_property_values(cur, compare_tag, predicted_values)
+			print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, predicted_values)))
+			if plotfile:
+				fig, ax = plt.subplots()
+				ax.scatter(property_values, predicted_values, marker='.', s=16)
+				plt.title("%s / %s" % (mol_db, model_db))
+				plt.xlabel(compare_tag)
+				plt.ylabel(property_name)
+				fig.savefig(plotfile)
+		else:
+			print ("%s not an available property name" % compare_tag)
 	
 if __name__ == "__main__":
     #import cProfile
