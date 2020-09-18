@@ -148,13 +148,13 @@ def get_property_values(cur, compared_property_name, predicted_values):
 	property_values = []
 	for row in cur:
 		imol = int(row[0]) - 1
-		print (imol, row[1], predicted_values[imol])
+		#print (imol, row[1], predicted_values[imol])
 		try:
 			val = float(row[1])
 		except:
 			# fill in missing values with predicted value just to make r2_score and plot happy
 			print (imol, row[1], predicted_values[imol])
-			val = predicted_values[imol][0]
+			val = predicted_values[imol]
 		property_values.append(val)
 	return property_values
 
