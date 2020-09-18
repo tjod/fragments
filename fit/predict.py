@@ -152,7 +152,7 @@ def get_property_values(cur, compared_property_name, predicted_values):
 			val = float(row[1])
 		except:
 			# fill in missing values with predicted value just to make r2_score and plot happy
-			print (imol, row[1])
+			print (imol, row[1], predicted_values[imol])
 			val = predicted_values[imol][0]
 		property_values.append(val)
 	return property_values
@@ -210,6 +210,7 @@ def main():
 	output_file(cur, property_name, fpout, format, add)
 	if compare_tag:
 		if compare_tag in list_properties(cur):
+			print ("Compare %s to %d %s" % (property_name, len(predicted_values), compare_tag))
 			property_values = get_property_values(cur, compare_tag, predicted_values)
 			print ("Compare %d %s to %d %s" % (len(property_values), property_name, len(predicted_values), compare_tag))
 			print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, predicted_values)))
