@@ -156,7 +156,8 @@ def get_property_values(cur, compared_property_name, predicted_values):
 			available_predicted_values.append(predicted_values[imol])
 		except:
 			# skip missing values
-			print (imol, row[1], predicted_values[imol])
+			pass
+			#print (imol, row[1], predicted_values[imol])
 	return (property_values, available_predicted_values)
 
 def show_stats(cur):
