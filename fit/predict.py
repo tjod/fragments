@@ -76,18 +76,18 @@ def predict(cur, property_name, pickle_file):
 		#print (len(counts), len(counts[0]))
 		#print (counts)
 		predicted_values = model.predict(counts)
-		cur.execute("Create Temporary Table new_property (molid Integer, propvlaue Numeric)")
+		cur.execute("Create Temporary Table new_property (molid Integer, propvalue Numeric)")
 		for imol in range(0, len(predicted_values)):
-			cur.execute("Insert Into new_property (molid, propvlaue) Values (?,?)", (imol+1, predicted_values[imol]))
+			cur.execute("Insert Into new_property (molid, propvalue) Values (?,?)", (imol+1, predicted_values[imol]))
 	else:
 		sql = """Create Temporary View new_property As With
 				atmp As (Select coefficient As intercept From atomid_coefficients Where atomid='Intercept'),
 				result As (Select molid, atomid, pcount, coefficient
 				  From molecule Join counts Using (molid) Join atomid_coefficients Using (atomid))
-				Select molid, Sum(pcount*coefficient)+intercept propvlaue
+				Select molid, Sum(pcount*coefficient)+intercept propvalue
 				  From atmp Join result Group By molid Order By molid"""
 		cur.execute(sql)
-		cur.execute("Select propvlaue From new_property Order By molid")
+		cur.execute("Select propvalue From new_property Order By molid")
 		predicted_values = cur.fetchall() # list(cur.fetchall())
 	return predicted_values
 
@@ -101,7 +101,7 @@ def output_file(cur, property_name, fpout, format, add):
 		else:
 			sql = "Select molblock, new_property.* From molecule Join new_property Using (molid)"
 		cur.execute(sql)
-		header = [property_name if d[0] == "propvlaue" else d[0] for d in cur.description]
+		header = [property_name if d[0] == "propvalue" else d[0] for d in cur.description]
 		for row in cur:
 			for icol in range(0, len(row)):
 				p = row[icol]
@@ -123,7 +123,7 @@ def output_file(cur, property_name, fpout, format, add):
 		else:
 			sql = "Select * From new_property Order By molid"
 		cur.execute(sql)	
-		header = [property_name if d[0] == "propvlaue" else d[0] for d in cur.description]
+		header = [property_name if d[0] == "propvalue" else d[0] for d in cur.description]
 		print (sep.join(header), file=fpout)
 		for row in cur:
 			prow = []
@@ -154,6 +154,11 @@ def get_property_values(cur, compared_property_name, predicted_values):
 		property_values.append(val)
 	return property_values
 
+def show_stats(cur):
+	cur.execute("Select min(propvalue), max(propvalue), avg(propvalue) From new_property")
+	#(min,max,avg) = cur.fetchone()
+	print ("minumum: %.3f; maximum: %.3f; average: %.3f" % cur.fetchone())
+	
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description="Create a model that fits molecular properties to atomid counts",
@@ -198,6 +203,7 @@ def main():
 		sys.exit()
 	cur.execute('Attach ? As model',  [model_db])
 	predicted_values = predict(cur, property_name, pickle_file)
+	show_stats(cur)
 	output_file(cur, property_name, fpout, format, add)
 	if compare_tag:
 		if compare_tag in list_properties(cur):

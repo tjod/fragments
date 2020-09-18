@@ -105,7 +105,7 @@ def getCounts(cur, nmols, max_level, flimit):
     #print (natomid)
 
     # get counts of occurrences of each atomid for each molecule
-    cur.execute("Create Temporary View If Not Exists counts As Select molid, atomid, Count(atom_index) pcount From atoms Group By molid, atomid")
+    cur.execute("Create Temporary Table If Not Exists counts As Select molid, atomid, Count(atom_index) pcount From atoms Group By molid, atomid")
     cur.execute("With matrix As (Select atomid, molid From top Join fitprop) Select Coalesce(pcount,0) pcount From matrix Left Join counts Using (molid,atomid) Order By molid, atomid")
     counts = []
     for i in range(0, nmols):
@@ -139,9 +139,9 @@ def parse_args():
     parser.add_argument("-p", "--pickle", help="output file for python pickle of model", default=None)
     parser.add_argument("-l", "--list", help="list properties in input db3 file, and exit", action="store_true")
     parser.add_argument("-f", "--fit", help="method of fitting", choices=["mlr", "bayes", "rf"], default="mlr")
-    parser.add_argument("-c", "--correlated", help="keep or remove correlated atomid before fitting", choices=["remove", "keep"], default="remove")
+    parser.add_argument("-c", "--correlated", help="keep or remove correlated atomid before fitting", choices=["remove", "reChcek", "keep"], default="remove")
     parser.add_argument("-n", "--modulo_N", help="include only every nth molecule; useful for shorter tests", type=int, default=1)
-    parser.add_argument("-g", "--graph", "--plot", help="output file for graph/plot of input vs predicted values", default=None)
+    parser.add_argument("--plot", help="output file for plot of input vs predicted values", default=None)
     parser.add_argument("-v", "--verbosity", type=int, help="increase output verbosity", default=1)
     return parser
 
@@ -160,8 +160,13 @@ def main():
     max_level = parsed.level
     method = parsed.fit
     verbosity = parsed.verbosity
-    remove_correlated = (parsed.correlated == "remove")
-    plotfile = parsed.graph
+    if parsed.correlated == "keep":
+        remove_correlated = 0
+    elif parsed.correlated == "remove":
+        remove_correlated = 1
+    elif parsed.correlated == "reCheck":
+        remove_correlated = 2
+    plotfile = parsed.plot
     mod_n = parsed.modulo_N
     list_prop = parsed.list
     pickle_file = parsed.pickle
@@ -179,7 +184,7 @@ def main():
             print (row[0])
         sys.exit()
     
-    # don't overwrite output file
+    # don't overwrite output file.
     if os.path.isfile(model_db):
         print ("cannot overwrite existing file %s" % model_db)
         sys.exit()
@@ -187,9 +192,16 @@ def main():
     if pickle_file and os.path.isfile(pickle_file):
         print ("cannot overwrite existing file %s" % pickle_file)
         sys.exit()
-        
+    
+    # model output database
+    mcon = sqlite3.connect(model_db)
+    mcur = mcon.cursor()
+    mcur.execute("Create Table If Not Exists parameters (start_date Text, input_file Text, property_name Text, model_file Text, n_features Integer, max_level Integer, method Text)")
+    mcur.execute("Create Table If Not Exists results (end_date Text, score Numeric, singular Integer)")
+    mcur.execute("Insert Into parameters Values (datetime('now'),?,?,?,?,?,?)", (mol_db, property_name, model_db, flimit, max_level, method))
+
     # get list of property values
-    sql = """Create Temporary View fitprop As
+    sql = """Create Temporary Table fitprop As
         With vtemp As (Select molid, Cast(propvalue As Float) As value From property_values
         Join property_names Using (propid) Where propname='%s' And propvalue Not Like '<%%' And propvalue Not Like '>%%')
         Select molid, vtemp.value From molecule Left Join vtemp Using (molid) Where vtemp.value Is Not Null And molid %% %d = 0"""
@@ -217,7 +229,7 @@ def main():
     if verbosity > 0: print ("%d correlated atomid sets" % len(correlated))
     if verbosity > 1: t = printElapsedTime(t)
     
-    if len(correlated) > 0 and remove_correlated:
+    if len(correlated) > 0 and remove_correlated > 0:
         # remove correlated atomid ...
         nremoved = 0
         for c in correlated:
@@ -239,8 +251,7 @@ def main():
         if verbosity > 1: t = printElapsedTime(t)
         # ... and look for correlation in reduced set.  should be none
         df = pd.DataFrame(counts, columns = atomid["atomid"])
-        re_check_correlation = True
-        if re_check_correlation:
+        if remove_correlated > 1:
             #print (df.shape)
             after_correlated = find_correlation(df, threshold = 0.98, remove_negative = True)
             if verbosity > 0: print ("%d correlated atomid sets" % len(after_correlated))
@@ -296,14 +307,9 @@ def main():
         fig.savefig(plotfile)
         #plt.show()
     # save coefficients
-    mcon = sqlite3.connect(model_db)
-    mcur = mcon.cursor()
-    mcur.execute("Create Table If Not Exists parameters (start_date Text, input_file Text, property_name Text, model_file Text, n_features Integer, max_level Integer, method Text)")
-    mcur.execute("Create Table If Not Exists results (end_date Text, score Numeric, singular Integer)")
     mcur.execute("Create Table If Not Exists atomid_coefficients (atomid Text, coefficient Real)")
     mcur.execute("Create Table If Not Exists atomid_info (atomid Text, iteration Integer, frequency Integer)")
     mcur.execute("Insert Into atomid_coefficients (atomid, coefficient) Values (?,?)", ['Intercept', intercept])
-    mcur.execute("Insert Into parameters Values (datetime('now'),?,?,?,?,?,?)", (mol_db, property_name, model_db, flimit, max_level, method))
     for i in range(0, natomid):
         mcur.execute("Insert Into atomid_coefficients (atomid, coefficient) Values (?,?)", [atomid["atomid"][i], coefficients[i]])
         mcur.execute("Insert Into atomid_info (atomid, iteration, frequency) Values (?,?,?)", [atomid["atomid"][i], atomid["iteration"][i], atomid["frequency"][i]])
@@ -323,7 +329,7 @@ def main():
     mcon.commit()
 
 if __name__ == "__main__":
-    #import cProfile
-    #cProfile.run('main()', 'profile.out')
-    main()
+    import cProfile
+    cProfile.run('main()', 'profile.out')
+    #main()
 
