@@ -141,24 +141,23 @@ def list_properties(cur):
 		property_names.append (row[0])
 	return property_names
 
-def get_property_values(cur, compared_property_name, predicted_values):
+def get_property_values(cur, compared_property_name):
 	cur.execute("Drop View If Exists mol_properties")
 	addView(cur, [compared_property_name])
-	cur.execute("Select * From mol_properties Order By molid")
+	cur.execute('Select molid, "%s", propvalue From mol_properties Join new_property Using (molid) Order By molid' % compared_property_name)
 	property_values = []
-	available_predicted_values = []
+	predicted_values = []
 	for row in cur:
-		imol = int(row[0]) - 1
-		#print (imol, row[1], predicted_values[imol])
 		try:
 			val = float(row[1])
+			pval = float(row[2])
 			property_values.append(val)
-			available_predicted_values.append(predicted_values[imol])
+			predicted_values.append(pval)
 		except:
 			# skip missing values
 			pass
 			#print (imol, row[1], predicted_values[imol])
-	return (property_values, available_predicted_values)
+	return (property_values, predicted_values)
 
 def show_stats(cur):
 	cur.execute("Select min(propvalue), max(propvalue), avg(propvalue) From new_property")
@@ -214,7 +213,7 @@ def main():
 	if compare_tag:
 		if compare_tag in list_properties(cur):
 			print ("Predicted %d %s" % (len(predicted_values), property_name))
-			(property_values, available_predicted_values) = get_property_values(cur, compare_tag, predicted_values)
+			(property_values, available_predicted_values) = get_property_values(cur, compare_tag)
 			print ("%d available %s comapared to %d %s" % (len(available_predicted_values), compare_tag, len(property_values), property_name))
 			print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, available_predicted_values)))
 			if plotfile:
