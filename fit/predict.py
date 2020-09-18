@@ -146,17 +146,18 @@ def get_property_values(cur, compared_property_name, predicted_values):
 	addView(cur, [compared_property_name])
 	cur.execute("Select * From mol_properties Order By molid")
 	property_values = []
+	available_predicted_values = []
 	for row in cur:
 		imol = int(row[0]) - 1
 		#print (imol, row[1], predicted_values[imol])
 		try:
 			val = float(row[1])
+			property_values.append(val)
+			available_predicted_values.append(predicted_values[imol])
 		except:
-			# fill in missing values with predicted value just to make r2_score and plot happy
+			# skip missing values
 			print (imol, row[1], predicted_values[imol])
-			val = predicted_values[imol]
-		property_values.append(val)
-	return property_values
+	return (property_values, available_predicted_values)
 
 def show_stats(cur):
 	cur.execute("Select min(propvalue), max(propvalue), avg(propvalue) From new_property")
@@ -211,13 +212,13 @@ def main():
 	output_file(cur, property_name, fpout, format, add)
 	if compare_tag:
 		if compare_tag in list_properties(cur):
-			print ("Compare %s to %d %s" % (property_name, len(predicted_values), compare_tag))
-			property_values = get_property_values(cur, compare_tag, predicted_values)
-			print ("Compare %d %s to %d %s" % (len(property_values), property_name, len(predicted_values), compare_tag))
-			print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, predicted_values)))
+			print ("Predicted %d %s" % (len(predicted_values), property_name))
+			(property_values, available_predicted_values) = get_property_values(cur, compare_tag, predicted_values)
+			print ("%d available %s comapared to %d %s" % (len(available_predicted_values), compare_tag, len(property_values), property_name))
+			print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, available_predicted_values)))
 			if plotfile:
 				fig, ax = plt.subplots()
-				ax.scatter(property_values, predicted_values, marker='.', s=16)
+				ax.scatter(property_values, available_predicted_values, marker='.', s=16)
 				plt.title("%s / %s" % (mol_db, model_db))
 				plt.xlabel(compare_tag)
 				plt.ylabel(property_name)
