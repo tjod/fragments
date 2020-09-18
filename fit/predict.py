@@ -52,8 +52,10 @@ def addView(cur, add):
 		case_clause = "Select molid, %s From property_values Join property_names Using (propid)" % ",".join(cases)
 		select = []
 		for (propid, propname) in property_names.items():
-			select.append('Group_concat(p%d) As "%s"' % (propid, propname))
+			# ensure only one value per molid, use min arbitrarily; max would do as well; avg fails for non-numeric
+			select.append('min(p%d) As "%s"' % (propid, propname))
 		select_clause = ",".join(select)
+		#print (sql % (case_clause, select_clause))
 		cur.execute(sql % (case_clause, select_clause))
 	return property_names
 
@@ -150,6 +152,7 @@ def get_property_values(cur, compared_property_name, predicted_values):
 			val = float(row[1])
 		except:
 			# fill in missing values with predicted value just to make r2_score and plot happy
+			print (imol, row[1])
 			val = predicted_values[imol][0]
 		property_values.append(val)
 	return property_values
@@ -208,6 +211,7 @@ def main():
 	if compare_tag:
 		if compare_tag in list_properties(cur):
 			property_values = get_property_values(cur, compare_tag, predicted_values)
+			print ("Compare %d %s to %d %s" % (len(property_values), property_name, len(predicted_values), compare_tag))
 			print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, predicted_values)))
 			if plotfile:
 				fig, ax = plt.subplots()
