@@ -206,26 +206,28 @@ def main():
 	if list:
 		[print(p) for p in list_properties(cur)]
 		sys.exit()
+	if compare_tag not in list_properties(cur):
+		print ("%s not an available property name" % compare_tag)
+		[print(p) for p in list_properties(cur)]
+		sys.exit()
+
 	cur.execute('Attach ? As model',  [model_db])
 	predicted_values = predict(cur, property_name, pickle_file)
 	show_stats(cur)
 	output_file(cur, property_name, fpout, format, add)
 	if compare_tag:
-		if compare_tag in list_properties(cur):
-			print ("Predicted %d %s" % (len(predicted_values), property_name))
-			(property_values, available_predicted_values) = get_property_values(cur, compare_tag)
-			print ("%d available %s comapared to %d %s" % (len(available_predicted_values), compare_tag, len(property_values), property_name))
-			print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, available_predicted_values)))
-			if plotfile:
-				fig, ax = plt.subplots()
-				ax.scatter(property_values, available_predicted_values, marker='.', s=16)
-				plt.title("%s / %s" % (mol_db, model_db))
-				plt.xlabel(compare_tag)
-				plt.ylabel(property_name)
-				fig.savefig(plotfile)
-		else:
-			print ("%s not an available property name" % compare_tag)
-	
+		print ("Predicted %d %s" % (len(predicted_values), property_name))
+		(property_values, available_predicted_values) = get_property_values(cur, compare_tag)
+		print ("%d available %s comapared to %d %s" % (len(available_predicted_values), compare_tag, len(property_values), property_name))
+		print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, available_predicted_values)))
+		if plotfile:
+			fig, ax = plt.subplots()
+			ax.scatter(property_values, available_predicted_values, marker='.', s=16)
+			plt.title("%s / %s" % (mol_db, model_db))
+			plt.xlabel(compare_tag)
+			plt.ylabel(property_name)
+			fig.savefig(plotfile)
+				
 if __name__ == "__main__":
     #import cProfile
     #cProfile.run('main()', 'profile.out')
