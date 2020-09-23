@@ -208,7 +208,7 @@ def addProp(cursor, imol, prop, val):
         propid = cursor.lastrowid
     cursor.execute("Insert Into property_values (molid, propid, propvalue) Values (?,?,?)", [imol, propid, val])
     
-def processSDF(cur, sdfile, max_depth, with_properties, limit, verbosity, store_graphs, removeH):
+def processSDF(cur, sdfile, max_depth, with_properties, limit, verbosity, store_graphs, removeH, storeMolblock):
     nmol = 0
     suppl = Chem.SDMolSupplier(sdfile, removeHs=removeH)
     for mol in suppl:
@@ -216,7 +216,10 @@ def processSDF(cur, sdfile, max_depth, with_properties, limit, verbosity, store_
         #print (json.dumps(mol, cls=MolAtomEncoder))
         (molblock, sep, moldata) = suppl.GetItemText(nmol).partition('M  END\n')
         nmol += 1
-        molid = addMol(cur, mol, molblock+sep, nmol, verbosity)
+        if storeMolblock:
+            molid = addMol(cur, mol, molblock+sep, nmol, verbosity)
+        else:
+            molid = addMol(cur, mol, None, nmol, verbosity)
         for p in mol.GetPropNames():
             addProp(cur, molid, p, mol.GetProp(p))
         # MW provides a nice test of prediction at depth = 0
@@ -278,6 +281,7 @@ def parse_args():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-v", "--verbosity", type=int, help="increase output verbosity", default=0)
     parser.add_argument("sdf", help="input sd file")
+    parser.add_argument("-m", "--molblock", help="store molblocks in output db", action="store_true")
     parser.add_argument("-db", help="output sqlite3 file", default=":memory:")
     parser.add_argument("-d", "--depth", type=int, help="maximum depth to search", default=1)
     parser.add_argument("-k", "--keepH", help="keep explicit H atoms in sd file", action="store_true")
@@ -298,6 +302,8 @@ def main():
     sdfile = parsed.sdf
     # remove H
     removeH = not parsed.keepH
+    # store molblocks
+    storeMolblock = parsed.molblock
     # limit number of input molecules
     limit = parsed.limit
     # output sqlite file
@@ -320,7 +326,7 @@ def main():
         con = sqlite3.connect(db)
         cur = con.cursor()
         makeTables(cur)
-        nmols = processSDF(cur, sdfile, max_depth, with_properties, limit, verbosity, store_graphs, removeH)
+        nmols = processSDF(cur, sdfile, max_depth, with_properties, limit, verbosity, store_graphs, removeH, storeMolblock)
         if verbosity > 0: print ("%d molecules processed" % nmols)
         con.commit()
 

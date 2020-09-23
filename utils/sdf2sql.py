@@ -83,17 +83,33 @@ def addProp(cursor, imol, prop, val):
         propid = cursor.lastrowid
     cursor.execute("Insert Into property_values (molid, propid, propvalue) Values (?,?,?)", [imol, propid, val])
 
-def processSDF(cursor, filename, split):
+def processSDF(cursor, filename, split, storeMolblock):
     nmol = 0
     # capture stderr when processing mol
     #sio = sys.stderr = StringIO()
     #fp = open(filename, 'rb')
     #suppl = Chem.ForwardSDMolSupplier(fp)
-    suppl = Chem.SDMolSupplier(filename)
+    
+    if filename.endswith(".gz"):
+        import gzip
+        inf = gzip.open(filename)
+        suppl = Chem.ForwardSDMolSupplier(inf)
+        if storeMolblock:
+            print ("Warning: cannot store molblock from gzip file", file=sys.stderr)
+    else:
+        suppl = Chem.SDMolSupplier(filename)
+
     for mol in suppl:
-        (molblock, sep, moldata) = suppl.GetItemText(nmol).partition('M  END')
+        if hasattr(suppl, "GetItemText"):
+            (molblock, sep, moldata) = suppl.GetItemText(nmol).partition('M  END')
+            if storeMolblock:
+                molstore = molblock+sep
+            else:
+                molstore = None
+        else:
+            molstore = None
         nmol += 1
-        imol = addMol(cursor, mol, molblock+sep, nmol)
+        imol = addMol(cursor, mol, molstore , nmol)
         if mol:
             for p in mol.GetPropNames():
                 if split:
@@ -174,12 +190,20 @@ def add_parent(cursor, iteration, atom):
 
 def processOutfile(cursor, outfile):
     try:
-        ofile = open(outfile, "r")
+        if outfile.endswith(".gz"):
+            import gzip
+            ofile = gzip.open(outfile, "rt")
+        else:
+            ofile = open(outfile, "r")
     except:
         return 0
 
     molid = 0
     iteration = 0
+    cursor.execute("Drop Table If Exists atoms")
+    cursor.execute("Drop Table If Exists smarts")
+    cursor.execute("Drop Table If Exists parents")
+    cursor.execute("Drop View If Exists atom_types")
     cursor.execute("Create Table atoms (molid integer, iteration integer, atomid text, atom_index integer)")
     cursor.execute("Create Table smarts (atomid text Unique, smarts Text, symbol Text, in_ring integer, is_aromatic integer, hvy_degree integer, hvy_valence integer, hcount integer, formal_charge integer, atomic_number integer, mass integer)")
     cursor.execute("Create Table parents (atomid text Unique, parentid text, iteration integer)")
@@ -209,33 +233,67 @@ def processOutfile(cursor, outfile):
                 add_parent(cursor, iteration, atom)
                 if atom_id: smarts_dict[atom_id] = smarts
             iteration += 1
-    return smarts_dict
-    
+    return molid
+
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description="Create sqlite (db3) file from input SD file and/or sdfCFP verbose output file",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("db", help="output sqlite3 file")
+    parser.add_argument("-v", "--verbosity", type=int, help="increase output verbosity", default=0)
+    parser.add_argument("--sdf", help="input sd file, or - for stdin")
+    parser.add_argument("-m", "--molblock", help="store molblocks in output db", action="store_true")
+    parser.add_argument("--cfp", help="verbose output file from sdfCFP, or - for stdin")
+    parser.add_argument("-k", "--keepH", help="keep explicit H atoms in sd file", action="store_true")
+    parser.add_argument("-s", "--split", help="split property values on comma", action="store_true")
+
+    return parser
+
 def main():
-    if len(sys.argv) < 2:
-        print ("usage: sdf2csv file [split]", file=sys.stderr)
-        exit()
+    parser = parse_args()
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit()
+    parsed = parser.parse_args()
     
-    filename = sys.argv[1]
-    if len(sys.argv) > 2:
-        split = True
-    else:
-        split = False
-    if not path.exists(filename):
-        print ("Error: no file %s" % filename, file=sys.stderr)
-        exit(1)
-    base =  os.path.basename(filename)
-    outfile = os.path.splitext(base)[0] + ".out"
-    if not path.exists(outfile):
-        print ("Error: no file %s" % outfile, file=sys.stderr)
-        exit(1)
-    db = os.path.splitext(base)[0] + ".db3"
+    db = parsed.db
+    sdf = parsed.sdf
+    split = parsed.split
+    keepH = parsed.keepH
+    storeMolblock = parsed.molblock
+    cfp = parsed.cfp
+
+    if sdf:
+        if sdf == "-" or path.exists(sdf):
+            pass
+        else:
+            print ("Error: no file %s" % sdf, file=sys.stderr)
+            sys.exit()   
+    if cfp:
+        if cfp == "-" or path.exists(cfp):
+            pass
+        else:
+            print ("Error: no file %s" % cfp, file=sys.stderr)
+            sys.exit()
+    if sdf and cfp and sdf == "-" and cfp == "-":
+        print ("sdf and cfp cannot both be stdin" % cfp, file=sys.stderr)
+
     conn = sqlite3.connect(db)
     cursor = conn.cursor()
     makeTables(cursor)
-    Chem.WrapLogs() # to get error messages normally headed for stderr
-    processSDF(cursor, filename, split)
-    smarts = processOutfile(cursor, outfile)
+    if sdf:
+        Chem.WrapLogs() # to get error messages normally headed for stderr
+        nprocessed = processSDF(cursor, sdf, split, storeMolblock)
+        
+    if cfp:
+        nout = processOutfile(cursor, cfp)
+        cursor.execute("Select count(molid) From molecule")
+        nmol = cursor.fetchone()[0]
+        if nmol == nout:
+            print ("%d sdf molecules; %d in cfp file" % (nmol, nout))
+        else:
+            print ("Warning: %d sdf molecules, but %d in cfp file" % (nmol, nout))
+        
     conn.commit()
 
 if __name__ == "__main__":
