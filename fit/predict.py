@@ -162,7 +162,7 @@ def get_property_values(cur, compared_property_name):
 def show_stats(cur):
 	cur.execute("Select min(propvalue), max(propvalue), avg(propvalue) From new_property")
 	#(min,max,avg) = cur.fetchone()
-	print ("minumum: %.3f; maximum: %.3f; average: %.3f" % cur.fetchone())
+	print ("minimum: %.3f; maximum: %.3f; average: %.3f" % cur.fetchone())
 	
 def parse_args():
     import argparse
@@ -206,7 +206,7 @@ def main():
 	if list:
 		[print(p) for p in list_properties(cur)]
 		sys.exit()
-	if compare_tag not in list_properties(cur):
+	if compare_tag and compare_tag not in list_properties(cur):
 		print ("%s not an available property name" % compare_tag)
 		[print(p) for p in list_properties(cur)]
 		sys.exit()
@@ -218,7 +218,7 @@ def main():
 	if compare_tag:
 		print ("Predicted %d %s" % (len(predicted_values), property_name))
 		(property_values, available_predicted_values) = get_property_values(cur, compare_tag)
-		print ("%d available %s comapared to %d %s" % (len(available_predicted_values), compare_tag, len(property_values), property_name))
+		print ("%d available %s compared to %d %s" % (len(available_predicted_values), compare_tag, len(property_values), property_name))
 		print ("%s:%s R-squared: %.3f" % (property_name, compare_tag, r2_score(property_values, available_predicted_values)))
 		if plotfile:
 			fig, ax = plt.subplots()
