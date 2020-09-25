@@ -21,7 +21,7 @@
 #SOFTWARE.
 import pandas as pd
 from sklearn.linear_model import LinearRegression, BayesianRidge
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, ExtraTreesRegressor
 from sklearn.metrics import r2_score
 import sqlite3
 import pickle
@@ -138,7 +138,7 @@ def parse_args():
     parser.add_argument("level", type=int, help="maximum atomid level to consider")
     parser.add_argument("-p", "--pickle", help="output file for python pickle of model", default=None)
     parser.add_argument("-l", "--list", help="list properties in input db3 file, and exit", action="store_true")
-    parser.add_argument("-f", "--fit", help="method of fitting", choices=["mlr", "bayes", "rf"], default="mlr")
+    parser.add_argument("-f", "--fit", help="method of fitting", choices=["mlr", "bayes", "rf", "xrt"], default="mlr")
     parser.add_argument("-c", "--correlated", help="keep or remove correlated atomid before fitting", choices=["remove", "reChcek", "keep"], default="remove")
     parser.add_argument("-n", "--modulo_N", help="include only every nth molecule; useful for shorter tests", type=int, default=1)
     parser.add_argument("--plot", help="output file for plot of input vs predicted values", default=None)
@@ -271,6 +271,12 @@ def main():
     #     property_pred = model.predict(counts)
     elif method == "rf":
         model = RandomForestRegressor(n_estimators=100, min_samples_leaf=1, max_depth = None)
+        model.fit(counts, property_values)
+        intercept = 0
+        coefficients = [None] * natomid
+        nsingular = natomid # ??
+    elif method == "xrt":
+        model = ExtraTreesRegressor(n_estimators=100)
         model.fit(counts, property_values)
         intercept = 0
         coefficients = [None] * natomid
