@@ -136,6 +136,7 @@ def parse_args():
     parser.add_argument("model", help="output model sqlite3 (db3) file")
     parser.add_argument("ndescriptors", type=int, help="number of atomid descriptors to consider")
     parser.add_argument("level", type=int, help="maximum atomid level to consider")
+    parser.add_argument("-i", "--intercept", help="do include intercept in fit", action="store_true")
     parser.add_argument("-p", "--pickle", help="output file for python pickle of model", default=None)
     parser.add_argument("-l", "--list", help="list properties in input db3 file, and exit", action="store_true")
     parser.add_argument("-f", "--fit", help="method of fitting", choices=["mlr", "bayes", "rf", "xrt"], default="mlr")
@@ -170,6 +171,7 @@ def main():
     mod_n = parsed.modulo_N
     list_prop = parsed.list
     pickle_file = parsed.pickle
+    intercept = parsed.intercept
 
     if not os.path.isfile(mol_db):
         print("cannot open file %s" % mol_db)
@@ -258,7 +260,7 @@ def main():
             if verbosity > 1: t = printElapsedTime(t)
     
     if method == "bayes":
-        model = BayesianRidge()
+        model = BayesianRidge(fit_intercept=intercept)
         model.fit(counts, property_values)
         nsingular = len(model.coef_) # ??
         intercept = model.intercept_
@@ -282,7 +284,7 @@ def main():
         coefficients = [None] * natomid
         nsingular = natomid # ??
     else:
-        model = LinearRegression().fit(counts, property_values)
+        model = LinearRegression(fit_intercept=intercept).fit(counts, property_values)
         nsingular = len(model.singular_)
         intercept = model.intercept_
         coefficients = model.coef_
