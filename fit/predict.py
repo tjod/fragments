@@ -22,6 +22,7 @@
 import sys
 import sqlite3
 import pickle
+from sklearn.linear_model import LinearRegression, BayesianRidge
 from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 import math
@@ -77,10 +78,20 @@ def predict(cur, property_name, pickle_file):
 			counts.append([row[0] for row in cur.fetchmany(natomid)])
 		#print (len(counts), len(counts[0]))
 		#print (counts)
-		predicted_values = model.predict(counts)
-		cur.execute("Create Temporary Table new_property (molid Integer, propvalue Numeric)")
-		for imol in range(0, len(predicted_values)):
-			cur.execute("Insert Into new_property (molid, propvalue) Values (?,?)", (imol+1, predicted_values[imol]))
+		bayes = isinstance(model, BayesianRidge)
+		if bayes:
+			predicted_values, predicted_std = model.predict(counts, return_std=True)
+			cur.execute("Create Temporary Table new_property (molid Integer, propvalue Numeric, propstd Numeric)")
+			for imol in range(0, len(predicted_values)):
+				cur.execute("Insert Into new_property (molid, propvalue, propstd) Values (?,?,?)",
+					 (imol+1, predicted_values[imol], predicted_std[imol]))
+		else:
+			predicted_values = model.predict(counts)
+			predicted_std = [None] * len(predicted_values)
+			cur.execute("Create Temporary Table new_property (molid Integer, propvalue Numeric)")
+			for imol in range(0, len(predicted_values)):
+				cur.execute("Insert Into new_property (molid, propvalue) Values (?,?)",
+						 (imol+1, predicted_values[imol]))
 	else:
 		sql = """Create Temporary View new_property As With
 				atmp As (Select coefficient As intercept From atomid_coefficients Where atomid='Intercept'),
@@ -103,7 +114,7 @@ def output_file(cur, property_name, fpout, format, add):
 		else:
 			sql = "Select molblock, new_property.* From molecule Join new_property Using (molid)"
 		cur.execute(sql)
-		header = [property_name if d[0] == "propvalue" else d[0] for d in cur.description]
+		header = [property_name if d[0] == "propvalue" else property_name+"_std" if d[0] == "propstd" else d[0] for d in cur.description]
 		for row in cur:
 			for icol in range(0, len(row)):
 				p = row[icol]
@@ -125,7 +136,7 @@ def output_file(cur, property_name, fpout, format, add):
 		else:
 			sql = "Select * From new_property Order By molid"
 		cur.execute(sql)	
-		header = [property_name if d[0] == "propvalue" else d[0] for d in cur.description]
+		header = [property_name if d[0] == "propvalue" else property_name+"_std" if d[0] == "propstd" else d[0] for d in cur.description]
 		print (sep.join(header), file=fpout)
 		for row in cur:
 			prow = []
