@@ -53,7 +53,7 @@ def properties(atom):
     
 # construct atom symbol, optionally using smarts with atom properties
 def atom_type(atom, as_smarts=True):
-    
+    allowed_symbols = ["B", "C", "N", "O", "P", "S", "F", "Cl", "Br", "I"]
     if as_smarts:
         if atom.HasProp("smarts"):
             return atom.GetProp("smarts")
@@ -61,6 +61,8 @@ def atom_type(atom, as_smarts=True):
         atom.SetProp("smarts", atom_string)
     else:
         atom_symbol = atom.GetSymbol()
+        if atom_symbol not in allowed_symbols:
+            atom_symbol = "[%s]" % atom_symbol
         atom_string = atom_symbol.lower() if atom.GetIsAromatic() else atom_symbol
     
     return atom_string
@@ -207,7 +209,14 @@ def addProp(cursor, imol, prop, val):
         cursor.execute("Insert Into property_names (propname) Values (?)", [prop])
         propid = cursor.lastrowid
     cursor.execute("Insert Into property_values (molid, propid, propvalue) Values (?,?,?)", [imol, propid, val])
-    
+
+def make_cansmarts(smarts):
+    mol = Chem.MolFromSmarts(smarts)
+#     for atom in mol.GetAtoms():
+#         atom.SetProp("smilesSymbol")
+    cansma = Chem.MolToSmiles(mol)
+    return cansma
+
 def processSDF(cur, sdfile, max_depth, with_properties, limit, verbosity, store_graphs, removeH, storeMolblock):
     nmol = 0
     suppl = Chem.SDMolSupplier(sdfile, removeHs=removeH)
@@ -250,7 +259,7 @@ def processSDF(cur, sdfile, max_depth, with_properties, limit, verbosity, store_
                     nodes = None
                 else:
                     ff = fragments[i]
-                    cansmi = Chem.MolToSmiles(Chem.MolFromSmarts(ff))
+                    cansmi = make_cansmarts(ff)
                     nodes = str(visited[i])
                     if store_graphs:
                         nodes = str(graphs[i].nodes())
@@ -280,7 +289,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="create fragments of input molecule(s)",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-v", "--verbosity", type=int, help="increase output verbosity", default=0)
-    parser.add_argument("sdf", help="input sd file")
+    parser.add_argument("-sdf", help="input sd file")
     parser.add_argument("-m", "--molblock", help="store molblocks in output db", action="store_true")
     parser.add_argument("-db", help="output sqlite3 file", default=":memory:")
     parser.add_argument("-d", "--depth", type=int, help="maximum depth to search", default=1)
@@ -342,6 +351,11 @@ def main():
         # pick your poison
         show_results(fragments)
         if verbosity > 2:
+            print ("\ncanonicalize")
+            for ff in fragments:
+                cansmi = make_cansmarts(ff)
+                print (ff, cansmi)
+        if verbosity > 3:
             show_results(list(set(fragments)))
             show_results(["[$(%s)]" % recursive_smarts for recursive_smarts in set(fragments)])
 
