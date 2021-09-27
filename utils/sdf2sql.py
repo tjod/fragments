@@ -19,14 +19,17 @@
 #LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 #OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 #SOFTWARE.
-from __future__ import print_function
+#from __future__ import print_function
 import sys
 import re
-from rdkit import Chem
 import sqlite3
 import os
-from io import StringIO
+#from io import StringIO
 from os import path
+
+
+from rdkit import Chem
+
 
 BOND = [None, "-", "=", "#", ":"]
 PERIODIC_TABLE = Chem.GetPeriodicTable()
@@ -189,14 +192,18 @@ def add_parent(cursor, iteration, atom):
     cursor.execute("Insert Or Ignore Into parents (atomid, parentid, iteration) Values (?,?,?)", (atomid, parentid, iteration))
 
 def processOutfile(cursor, outfile):
-    try:
-        if outfile.endswith(".gz"):
-            import gzip
-            ofile = gzip.open(outfile, "rt")
-        else:
-            ofile = open(outfile, "r")
-    except:
-        return 0
+    if outfile.close:
+        # already opened file or StringIO
+        ofile = outfile
+    else:
+        try:
+            if outfile.endswith(".gz"):
+                import gzip
+                ofile = gzip.open(outfile, "rt")
+            else:
+                ofile = open(outfile, "r")
+        except:
+            return 0
 
     molid = 0
     iteration = 0
