@@ -21,6 +21,7 @@
 #SOFTWARE.import sqlite3
 import networkx as nx
 import sys
+import sqlite3
 from graphs import atom_match, bond_match
 
 def is_isomorphic(g1,g2):
@@ -34,8 +35,10 @@ def is_isomorphic(g1,g2):
 db = sys.argv[1]
 con = sqlite3.connect(db)
 cur = con.cursor()
-cur.execute ("Create Table If Not Exists isomorphs(a_graphid Integer References graph(graphid), b_graphid Integer References graph(graphid))")
+cur.execute ("Drop Table If Exists isomorphs")
+cur.execute ("Create Table isomorphs(a_graphid Integer References graph(graphid), b_graphid Integer References graph(graphid))")
 cur.execute("Create View If Not Exists isosmarts As Select a.atomid||'.'||b.atomid From isomorphs Join graphs a On (a_graphid=a.graphid) Join graphs b On (b_graphid=b.graphid)")
+cur.execute("Create View If Not Exists usmarts As With gid As (Select graphid, atomid,cansmiles From graphs), amin As (Select a_graphid, a.cansmiles, Min(a.atomid, Min(b.atomid)) atomid From isomorphs Join gid a On (a_graphid=a.graphid) Join gid b On (b_graphid=b.graphid) where a_graphid < b_graphid Group By a_graphid) Select a_graphid As graphid, cansmiles, atomid From amin")
 cur2 = con.cursor()
 cur.execute("Select cansmiles, Count(atomid) cc From graphs Where iteration > 0 Group By cansmiles Having cc > 1")
 for row in cur:
